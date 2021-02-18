@@ -1,0 +1,368 @@
+---
+title: "K estimation"
+author: J. Lacasa
+  output:
+  html_document:
+    df_print: paged
+---
+
+```{r library, include=FALSE}
+library(tidyverse)
+library(broom)
+library(car)
+library(rstan)
+library(zoo)
+library(tidybayes)
+```
+
+#### Data   
+
+```{r data, include=F}
+d <- read.csv("data_k.csv")
+```
+
+## Statistical Model  
+
+LSE determines the light extinction coefficient based on its loss function, but does not imply a specific staistical model. In contrast, both MLE and Bayesian estimations make assumptions about probability distributions, making a wider range of inferences possible.  
+
+The statistical model for MLE and Bayesian estimations can be written out as:  
+\begin{equation}
+\tag{1}
+\mathbf{y}\sim[y_{ij}|\mu_{ij},\psi],
+\end{equation}
+
+\begin{equation}
+\tag{2}
+\mu_{ij} = 1 - e^{-k_{j}\cdot\text{LAI}_{ij}},
+\end{equation}
+
+where $\mathbf{y}$ is a vector with the data, $y_{ij}$ is the ith observation of hybrid j, $k_j$ is the light extinction coefficient for hybrid j and $\text{LAI}_{ij}$ is the value of LAI of the ith observation and hybrid j. This expression implies that $y_{ij}$ may have different probability distributions, depending on the assumptions of the model. The assumption that ML estimates are equal to LS estimates is the normal distribution of the residuals.  
+
+Equation (1) can we rewritten as  
+
+\begin{equation}
+\tag{3}
+y_{ij}\sim{N}(\mu_{ij},\sigma^{2}),
+\end{equation}  
+
+or 
+
+\begin{equation}
+\tag{4}
+y_{ij}\sim{beta}(\mu_{ij},\kappa),
+\end{equation}  
+  
+depending on the assumptions. This document uses MLE assuming a normal distribution for y (3) in section 2.1 and a beta distribution for y (4) in section 2.2. The Bayesian model (section 3) assumes (4).   
+
+```{r design matrix, message=FALSE, warning=FALSE}
+y <- d$int # Response variable
+X <- d$lai # Predictor variable
+
+gens <- d$gen %>% unique() #Names of categories
+
+d <- d %>% mutate(gen_n = as.factor(gen) %>% as.numeric()) # Create a column with 'gen' as numeric 
+
+# Create a matrix g with indicators (zeros and ones) for each genotype
+g <- matrix(ncol = length(unique(d$gen)), nrow = nrow(d))
+for (i in 1:length(unique(d$gen))){
+  g[,i] <- (ifelse(d$gen_n==i, 1, 0))
+}
+
+# Create design matrix X 
+X <- X *g  
+```
+
+### 1. Least Squares Estimation:  
+
+```{r nls, message=F, warning=F}
+LSE <- function(pars){
+  k1 <- pars[1]
+  k2 <- pars[2]
+  k3 <- pars[3]
+  k4 <- pars[4]
+  k5 <- pars[5]
+  k6 <- pars[6]
+  k7 <- pars[7]
+  sum((y -(1 -(exp(-(k1*X[,1])-(k2*X[,2])-(k3*X[,3])-(k4*X[,4])-(k5*X[,5]) #NORMAL DISTRIBUTION
+                               -(k6*X[,6])-(k7*X[,7])))))^2)
+}
+
+set.seed(5744)
+a <- runif(7,0.2,0.8)
+nls_model <- optim(par = c(k1= a[1],k2=a[2],k3=a[3],k4=a[4],k5=a[5],k6=a[6],k7=a[7]),
+                   fn = LSE, hessian = TRUE)
+
+nls_results <- data.frame(estimate=nls_model$par) %>% add_rownames("k")
+```
+
+### 2. Maximum Likelihood Estimation:  
+#### 2.1. Normal distribution  
+```{r NLL norm, message=FALSE, warning=FALSE}
+NLL <- function(pars){
+  k1 <- pars[1]
+  k2 <- pars[2]
+  k3 <- pars[3]
+  k4 <- pars[4]
+  k5 <- pars[5]
+  k6 <- pars[6]
+  k7 <- pars[7]
+  sigma2 <- exp(pars[8])
+  -sum(dnorm(y, mean = (1 -(exp(-(k1*X[,1])-(k2*X[,2])-(k3*X[,3])-(k4*X[,4])-(k5*X[,5]) #NORMAL DISTRIBUTION
+                               -(k6*X[,6])-(k7*X[,7])))), sd = sqrt(sigma2),log=TRUE))
+}
+
+op1 <- 
+  function(a){
+  y <- optim(par = c(k1= a[1],k2=a[2],k3=a[3],k4=a[4],k5=a[5],k6=a[6],k7=a[7],
+                      log_sigma2 = log(0.01)), 
+              fn = NLL, hessian = TRUE, method="BFGS")
+  }
+
+set.seed(564)
+a <- runif(7,0.2,0.8)
+mle1 <-op1(a)
+
+set.seed(4685)
+a <- runif(7,0.2,0.8) 
+mle2 <- op1(a)
+
+set.seed(5744)
+a <- runif(7,0.2,0.8) 
+mle3 <- op1(a)
+
+set.seed(2305)
+a <- runif(7,0.2,0.8) 
+mle4 <- op1(a)
+
+set.seed(6531)
+a <- runif(7,0.2,0.8) 
+mle5 <- op1(a)
+
+set.seed(351)
+a <- runif(7,0.2,0.8) 
+mle6 <- op1(a)
+
+set.seed(4685)
+a <- runif(7,0.2,0.8) 
+mle7 <- op1(a)
+
+set.seed(645)
+a <- runif(7,0.2,0.8) 
+mle8 <- op1(a)
+
+set.seed(545)
+a <- runif(7,0.2,0.8) 
+mle9 <- op1(a)
+
+set.seed(6541)
+a <- runif(7,0.3,0.8) 
+mle10 <- op1(a)
+``` 
+
+#### MLE (normal) Results:  
+
+```{r mle_n res, message=FALSE, warning=FALSE}
+mle <- mle3 #mle3 had the highest likelihood (lowest NLL value)
+
+mle_results_n <- as.data.frame(deltaMethod(mle$par,g.=c("k1"), vcov.=solve(mle$hessian), parameterNames = par_names)) %>% 
+  rbind(as.data.frame( deltaMethod(mle$par,g.=c("k2"), vcov.=solve(mle$hessian), parameterNames = par_names))) %>%
+  rbind(as.data.frame(deltaMethod(mle$par,g.=c("k3"), vcov.=solve(mle$hessian), parameterNames =par_names))) %>%
+  rbind(as.data.frame(deltaMethod(mle$par,g.=c("k4"), vcov.=solve(mle$hessian), parameterNames =par_names))) %>% 
+  rbind(as.data.frame( deltaMethod(mle$par,g.=c("k5"), vcov.=solve(mle$hessian), parameterNames = par_names))) %>%
+  rbind(as.data.frame(deltaMethod(mle$par,g.=c("k6"), vcov.=solve(mle$hessian), parameterNames =par_names))) %>%
+  rbind(as.data.frame(deltaMethod(mle$par,g.=c("k7"), vcov.=solve(mle$hessian), parameterNames =par_names))) %>%
+  round(3);mle_results_n
+```
+ 
+### 2.2. Maximum Likelihood Estimation:  
+#### Beta distribution   
+ 
+\begin{equation}
+\tag{5}
+y_{ij}\sim{beta}(\mu_{ij},\kappa),
+\end{equation}  
+
+Beta function:  
+```{r funs, message=FALSE, warning=FALSE}
+dbeta1 <- function(x,mu,sigma2){
+  alpha <- (mu^2-mu^3-mu*sigma2)/sigma2
+  beta <- (mu-2*mu^2+mu^3-sigma2+mu*sigma2)/sigma2
+  dbeta(x,alpha,beta, log=TRUE )
+}
+``` 
+ 
+```{r freq w data, message=FALSE, warning=FALSE}
+NLL_b <- function(pars){
+  k1 <- exp(pars[1])
+  k2 <- exp(pars[2])
+  k3 <- exp(pars[3])
+  k4 <- exp(pars[4])
+  k5 <- exp(pars[5])
+  k6 <- exp(pars[6])
+  k7 <- exp(pars[7])
+  sigma2 <- exp(pars[8])
+  -sum(dbeta1(y, mu = (1 -(exp(-(k1*X[,1])-(k2*X[,2])-(k3*X[,3])-(k4*X[,4])-(k5*X[,5]) #BETA DISTRIBUTION
+                               -(k6*X[,6])-(k7*X[,7])))), sigma2 = sigma2))
+}
+
+
+op2 <- function(a){
+  optim(par = c(log_k1= log(a[1]), log_k2=log(a[2]),log_k3= log(a[3]), log_k4=log(a[4]),
+                log_k5=log(a[5]),log_k6= log(a[6]), log_k7=log(a[7]), log_sigma2 = log(0.01)),
+        fn = NLL_b, hessian = TRUE, method="BFGS")
+}
+
+# trying different starting values for the optimization in MLE 
+set.seed(6556)
+a <- runif(7,0.2,0.8) 
+mle1 <- op2(a)
+
+set.seed(46385)
+a <- runif(7,0.2,0.8) 
+mle2 <- op2(a)
+
+set.seed(06031995)
+a <- runif(7,0.2,0.8) 
+mle3 <- op2(a)
+
+set.seed(55)
+a <- runif(7,0.2,0.8) 
+mle4 <- op2(a)
+
+set.seed(20051997)
+a <- runif(7,0.2,0.8) 
+mle5 <- op2(a)
+
+set.seed(5744)
+a <- runif(7,0.2,0.8) 
+mle6 <- op2(a)
+
+set.seed(6845)
+a <- runif(7,0.2,0.8) 
+mle7 <- op2(a)
+
+set.seed(684)
+a <- runif(7,0.2,0.8) 
+mle8 <- op2(a)
+
+set.seed(08071993)
+a <- runif(7,0.2,0.8) 
+mle9 <- op2(a)
+
+set.seed(834698)
+a <- runif(7,0.2,0.8) 
+mle10 <- op2(a)
+```
+
+```{r mle, message=FALSE, warning=FALSE}
+library(car)
+mle_results_b<-as.data.frame(deltaMethod(mle6$par,g.=c("exp(log_k1)"), vcov.=solve(mle6$hessian), parameterNames = par_names)) %>%
+  rbind(as.data.frame( deltaMethod(mle6$par,g.=c("exp(log_k2)"), vcov.=solve(mle6$hessian), parameterNames = par_names))) %>%
+  rbind(as.data.frame(deltaMethod(mle6$par,g.=c("exp(log_k3)"), vcov.=solve(mle6$hessian), parameterNames =par_names))) %>%
+  rbind(as.data.frame(deltaMethod(mle6$par,g.=c("exp(log_k4)"), vcov.=solve(mle6$hessian), parameterNames =par_names))) %>% 
+  rbind(as.data.frame( deltaMethod(mle6$par,g.=c("exp(log_k5)"), vcov.=solve(mle6$hessian), parameterNames = par_names))) %>%
+  rbind(as.data.frame(deltaMethod(mle6$par,g.=c("exp(log_k6)"), vcov.=solve(mle6$hessian), parameterNames =par_names))) %>%
+  rbind(as.data.frame(deltaMethod(mle6$par,g.=c("exp(log_k7)"), vcov.=solve(mle6$hessian), parameterNames =par_names))) %>%
+  round(3)
+
+mle_results_b
+```
+
+Compare the results:  
+
+```{r compare}
+nls_results; mle_results_n$Estimate; mle_results_b$Estimate
+```
+
+
+
+### 3. Bayesian  
+\begin{equation}
+\tag{6}
+y_{ij}\sim{beta}(\mu_{ij},\kappa),
+\end{equation}  
+
+Priors:  
+\begin{equation}
+\tag{7}
+k_{j}\sim\text{uniform}(0,2),
+\end{equation}  
+
+\begin{equation}
+\tag{8}
+\kappa\sim\text{gamma}(24,2).
+\end{equation}  
+
+```{r stan1, message=F, warning=F}
+stan_model <- 
+"  data{
+    int<lower=1> N; // nr of observations
+    int<lower=1> M; // nr of simulations from posterior
+    vector[N] x; // predictor variable
+    vector[M] xx; // x for simulations
+    int<lower=1> p[N]; // grouping variable
+    int<lower=1> pp[M]; // grouping variable for sims
+    int<lower=1> n_p; // number of levels
+    vector[N] y; // observations of response variable
+  }
+
+  parameters{
+    real<lower=0> k_hat[n_p]; // Restrict k_hat to be only >=0 
+    real<lower=0> kappa; // Restrict kappa to be only >=0
+  }
+
+  model{
+    k_hat[p] ~ uniform(0,2); // same prior distribution for all the levels 
+                           // of the grouping variable
+    kappa ~ gamma(24,2); // prior distribution for kappa
+    
+    for (i in 1:N) { 
+    y[i] ~ beta_proportion(1- exp(-k_hat[p[i]]*x[i]), kappa); // eqtns (3) and (4)
+    } 
+    }
+  generated quantities{
+    real pred[M];
+    real log_lik[N];
+
+    for (j in 1:M) {
+    pred[j] = beta_proportion_rng(1- exp(-k_hat[pp[j]]*xx[j]), kappa); // posterior predictions
+    }
+
+    for (n in 1:N) {
+      log_lik[n] = beta_proportion_lpdf(y[n] | 1- exp(-k_hat[p[n]]*x[n]), kappa); // log lik (loo)
+    }
+    }
+"
+
+d2 <-d
+
+n_p <- length(d2$gen_n %>% unique) # number of levels in gen
+
+set.seed(2507)
+pp <- rep(1:7,each = 100) # create a new gen vector to generate predictions 
+
+xx2=runif(length(pp), min(d2$lai),max(d2$lai)) # lai vector for predictions
+library("rstan")
+
+m <- stan(model_code = stan_model, 
+           data= list(N=nrow(d2),
+                      x=d2$lai,
+                      y=d2$int,
+                      p=d2$gen_n,
+                      xx=xx2,
+                      M=length(pp),
+                      pp=pp,
+                      n_p= n_p),
+           warmup = 1500,iter = 3000,
+           seed = 9503,
+           chains=4,cores = 4)
+
+print(m, pars=c("k_hat", "kappa")) 
+
+bayes_results <- (summary(m) %>% as.data.frame())[1:n_p,1:8] 
+
+colnames(bayes_results) <- c("mean","se_mean","sd","0.025","0.25","0.50","0.75","0.975")
+
+```
+
+
